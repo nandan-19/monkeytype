@@ -72,6 +72,8 @@ import { debounce } from "throttle-debounce";
 import * as Time from "../states/time";
 import { qs } from "../utils/dom";
 import { setAccountButtonSpinner } from "../signals/header";
+import * as RaceMode from "./race-mode";
+import { sendComplete, sendProgress } from "../services/race-socket";
 
 let failReason = "";
 
@@ -123,7 +125,49 @@ export function startTest(now: number): boolean {
   TestStats.setStart(now);
   void TestTimer.start();
   TestUI.onTestStart();
+
+  if (RaceMode.isRaceMode()) {
+    clearRaceProgressSync();
+    raceProgressSyncTimer = window.setInterval(() => {
+      if (!TestState.isActive) {
+        clearRaceProgressSync();
+        return;
+      }
+      const wpm = TestStats.calculateWpmAndRaw().wpm;
+      sendProgress(TestState.activeWordIndex, wpm);
+    }, 250);
+  }
+
   return true;
+}
+
+let raceProgressSyncTimer: number | null = null;
+
+function clearRaceProgressSync(): void {
+  if (raceProgressSyncTimer !== null) {
+    window.clearInterval(raceProgressSyncTimer);
+    raceProgressSyncTimer = null;
+  }
+}
+
+function scheduleRaceAutoStart(): void {
+  if (!RaceMode.isRaceMode() || TestState.isActive) return;
+
+  const raceStartAt = RaceMode.getRaceStartAt();
+  const delayMs = Math.max(0, (raceStartAt ?? Date.now()) - Date.now());
+
+  const tryStart = (retriesLeft: number): void => {
+    if (TestState.isActive || !RaceMode.isRaceMode()) return;
+
+    const started = startTest(performance.now());
+    if (!started && retriesLeft > 0) {
+      window.setTimeout(() => tryStart(retriesLeft - 1), 100);
+    }
+  };
+
+  window.setTimeout(() => {
+    tryStart(40); // retry up to ~4s to survive page transition timing
+  }, delayMs);
 }
 
 type RestartOptions = {
@@ -253,6 +297,7 @@ export function restart(options = {} as RestartOptions): void {
 
   ManualRestart.reset();
   TestTimer.clear();
+  clearRaceProgressSync();
   TestStats.restart();
   TestInput.restart();
   TestInput.corrected.reset();
@@ -325,6 +370,9 @@ export function restart(options = {} as RestartOptions): void {
       }
 
       TestUI.onTestRestart(source);
+      if (RaceMode.isRaceMode()) {
+        scheduleRaceAutoStart();
+      }
 
       const typingTestEl = document.querySelector("#typingTest") as HTMLElement;
       animate(typingTestEl, {
@@ -477,33 +525,40 @@ async function init(): Promise<boolean> {
   let allLigatures: boolean | undefined = undefined;
   let generatedWords: string[] = [];
   let generatedSectionIndexes: number[] = [];
-  try {
-    const gen = await WordsGenerator.generateWords(language);
-    generatedWords = gen.words;
-    generatedSectionIndexes = gen.sectionIndexes;
-    wordsHaveTab = gen.hasTab;
-    wordsHaveNewline = gen.hasNewline;
-    ({ allRightToLeft, allLigatures } = gen);
-  } catch (e) {
-    hideLoaderBar();
-    if (e instanceof WordGenError || e instanceof Error) {
-      lastInitError = e;
-    }
-    console.error(e);
-    if (e instanceof WordGenError) {
-      if (e.message.length > 0) {
-        showNoticeNotification(e.message, {
+
+  // ── Race mode: bypass word generator, use server-supplied words
+  if (RaceMode.isRaceMode()) {
+    generatedWords = RaceMode.getRaceWords();
+    generatedSectionIndexes = generatedWords.map(() => 0);
+  } else {
+    try {
+      const gen = await WordsGenerator.generateWords(language);
+      generatedWords = gen.words;
+      generatedSectionIndexes = gen.sectionIndexes;
+      wordsHaveTab = gen.hasTab;
+      wordsHaveNewline = gen.hasNewline;
+      ({ allRightToLeft, allLigatures } = gen);
+    } catch (e) {
+      hideLoaderBar();
+      if (e instanceof WordGenError || e instanceof Error) {
+        lastInitError = e;
+      }
+      console.error(e);
+      if (e instanceof WordGenError) {
+        if (e.message.length > 0) {
+          showNoticeNotification(e.message, {
+            important: true,
+          });
+        }
+      } else {
+        showErrorNotification("Failed to generate words", {
+          error: e,
           important: true,
         });
       }
-    } else {
-      showErrorNotification("Failed to generate words", {
-        error: e,
-        important: true,
-      });
-    }
 
-    return await init();
+      return await init();
+    }
   }
 
   let hasNumbers = false;
@@ -560,6 +615,7 @@ async function init(): Promise<boolean> {
     "Test initialized with section indexes",
     generatedSectionIndexes,
   );
+
   return true;
 }
 
@@ -585,6 +641,11 @@ export function areAllTestWordsGenerated(): boolean {
 
 //add word during the test
 export async function addWord(): Promise<void> {
+  // Race mode uses a fixed server-provided word list. Do not generate extras.
+  if (RaceMode.isRaceMode()) {
+    return;
+  }
+
   if (Config.mode === "zen") {
     TestUI.appendEmptyWordElement();
     return;
@@ -841,6 +902,7 @@ export async function finish(difficultyFailed = false): Promise<void> {
   TestUI.setResultCalculating(true);
   const now = performance.now();
   TestTimer.clear();
+  clearRaceProgressSync();
   TestStats.setEnd(now);
 
   // fade out the test and show loading
@@ -1125,6 +1187,28 @@ export async function finish(difficultyFailed = false): Promise<void> {
     completedEvent.testDuration - completedEvent.afkDuration,
   );
   Result.updateTodayTracker();
+
+  // ── Race mode: emit result via socket, skip normal save flow ──────────────
+  if (RaceMode.isRaceMode() && !dontSave) {
+    sendComplete({
+      wpm: completedEvent.wpm,
+      rawWpm: completedEvent.rawWpm,
+      acc: completedEvent.acc,
+      timestamp: completedEvent.timestamp,
+    });
+    // Still show local result UI but skip DB save
+    await Result.update(
+      completedEvent,
+      difficultyFailed,
+      failReason,
+      afkDetected,
+      TestState.isRepeated,
+      tooShort,
+      TestWords.currentQuote,
+      true, // dontSave = true in race mode
+    );
+    return;
+  }
 
   let savingResultPromise: ReturnType<typeof saveResult> =
     Promise.resolve(null);

@@ -60,6 +60,18 @@ const routes: Route[] = [
     },
   },
   {
+    path: "/compete",
+    load: async (_params, options) => {
+      await PageController.change("compete", options);
+    },
+  },
+  {
+    path: "/compete/:roomId",
+    load: async (_params, options) => {
+      await PageController.change("compete", options);
+    },
+  },
+  {
     path: "/leaderboards",
     load: async (_params, options) => {
       await PageController.change("leaderboards", options);

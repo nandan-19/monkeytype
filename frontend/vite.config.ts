@@ -346,6 +346,9 @@ export default defineConfig(({ mode }): UserConfig => {
       open: env["SERVER_OPEN"] !== "false",
       port: 3000,
       host: env["BACKEND_URL"] !== undefined,
+      allowedHosts: [
+        "3811-2402-3a80-27b-f6a2-ecb1-d570-f82b-e18b.ngrok-free.app",
+      ],
       watch: {
         //we rebuild the whole contracts package when a file changes
         //so we only want to watch one file

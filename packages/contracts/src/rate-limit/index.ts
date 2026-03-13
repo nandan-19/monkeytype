@@ -386,6 +386,17 @@ export const limits = {
     window: "hour",
     max: 60,
   },
+
+  // Compete (Race) Routing
+  competeCreate: {
+    window: "minute",
+    max: 10,
+  },
+
+  competeGet: {
+    window: "minute",
+    max: 60,
+  },
 } satisfies Record<string, RateLimitOptions>;
 
 export type RateLimiterId = keyof typeof limits;

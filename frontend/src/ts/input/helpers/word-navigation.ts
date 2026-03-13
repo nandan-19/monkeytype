@@ -16,6 +16,8 @@ import { showLoaderBar, hideLoaderBar } from "../../signals/loader-bar";
 import { setInputElementValue } from "../input-element";
 import { setAwaitingNextWord } from "../state";
 import { DeleteInputType } from "./input-type";
+import * as RaceMode from "../../test/race-mode";
+import { sendProgress } from "../../services/race-socket";
 
 type GoToNextWordParams = {
   correctInsert: boolean;
@@ -84,6 +86,12 @@ export async function goToNextWord({
   ) {
     ret.increasedWordIndex = true;
     TestState.increaseActiveWordIndex();
+
+    // Race mode: throttled progress update
+    if (RaceMode.isRaceMode()) {
+      const wpm = TestStats.calculateWpmAndRaw().wpm;
+      sendProgress(TestState.activeWordIndex, wpm);
+    }
   }
 
   setInputElementValue("");

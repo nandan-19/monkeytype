@@ -6,7 +6,7 @@ import {
   updateFromConfigurationFile,
 } from "./init/configuration";
 import app from "./app";
-import { Server } from "http";
+import { Server, createServer } from "http";
 import { version } from "./version";
 import { recordServerVersion } from "./utils/prometheus";
 import * as RedisClient from "./init/redis";
@@ -19,6 +19,7 @@ import { createIndicies as leaderboardDbSetup } from "./dal/leaderboards";
 import { createIndicies as blocklistDbSetup } from "./dal/blocklist";
 import { createIndicies as connectionsDbSetup } from "./dal/connections";
 import { getErrorMessage } from "./utils/error";
+import { initSocketIo } from "./init/socket";
 
 async function bootServer(port: number): Promise<Server> {
   try {
@@ -89,7 +90,11 @@ async function bootServer(port: number): Promise<Server> {
     return process.exit(1);
   }
 
-  return app.listen(port, () => {
+  const httpServer = createServer(app);
+  Logger.info("Initializing Socket.io...");
+  initSocketIo(httpServer);
+
+  return httpServer.listen(port, () => {
     Logger.success(`API server listening on port ${port}`);
   });
 }

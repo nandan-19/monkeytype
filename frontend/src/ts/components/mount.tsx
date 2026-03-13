@@ -12,6 +12,7 @@ import { Overlays } from "./layout/overlays/Overlays";
 import { Modals } from "./modals/Modals";
 import { AboutPage } from "./pages/AboutPage";
 import { MyProfile } from "./pages/account/MyProfile";
+import { CompetePage } from "./pages/CompetePage";
 import { LeaderboardPage } from "./pages/leaderboard/LeaderboardPage";
 import { ProfilePage } from "./pages/profile/ProfilePage";
 import { ProfileSearchPage } from "./pages/profile/ProfileSearchPage";
@@ -21,6 +22,7 @@ const components: Record<string, () => JSXElement> = {
   footer: () => <Footer />,
   aboutpage: () => <AboutPage />,
   leaderboardpage: () => <LeaderboardPage />,
+  competepage: () => <CompetePage />,
   profilepage: () => <ProfilePage />,
   profilesearchpage: () => <ProfileSearchPage />,
   myprofile: () => <MyProfile />,

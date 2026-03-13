@@ -55,6 +55,7 @@ const pages = {
   friends: Friends.page,
   404: Page404.page,
   accountSettings: PageAccountSettings.page,
+  compete: solidPage("compete"),
   leaderboards: solidPage("leaderboards", {
     urlParamsSchema: LeaderboardUrlParamsSchema,
     loadingOptions: {
